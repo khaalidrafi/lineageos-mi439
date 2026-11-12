@@ -1,0 +1,128 @@
+# LineageOS build for Xiaomi Mi439 — variant3 = Redmi 8A
+# Guide: https://wiki.lineageos.org/devices/Mi439/build/variant3/
+#
+# Wiki hardware requirements (guide):
+#   lineage-21 and up : 400 GB storage, 64 GB RAM
+#   lineage-18.1      : 300 GB storage, 32 GB RAM
+#   up to 17.1        : 200 GB storage, 16 GB RAM
+# GitHub free runners (ubuntu-latest) ship ~14-22 GB disk / 16 GB RAM, so the
+# preflight below FAILS FAST on them with the exact numbers — it does not
+# burn an hour dying mid-`repo sync`. Point the `runner` input at a runner
+# that meets the requirements (self-hosted or a paid larger runner) and this
+# SAME workflow runs the full build unmodified.
+#
+# Proprietary blobs: variant3's before_install is "needs_specific_android_fw".
+# In CI there is no device, so either (a) plug the Redmi 8A into a runner and
+# run ./extract-files.py per the wiki, or (b) drop a verified blob-source
+# manifest into local_manifests/ before the sync step. The classic mirror
+# (TheMuppets/proprietary_vendor_xiaomi) is DMCA-taken-down (github/dmca
+# 2019-08-09) — no unverified mirror is hardcoded here on purpose.
+
+name: los-mi439-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner label. Wiki needs 400GB disk / 64GB RAM for lineage-21+'
+        default: 'ubuntu-latest'
+        required: false
+      branch:
+        description: 'LineageOS branch (variant3 supported: 19.1, 20, 21, 22.2, 23.0, 23.2)'
+        default: 'lineage-23.2'
+        required: false
+      device:
+        description: 'Device codename (variant3 = Mi439, Redmi 8A)'
+        default: 'Mi439'
+        required: false
+
+jobs:
+  build:
+    name: breakfast + brunch (${{ inputs.device }} / ${{ inputs.branch }})
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    timeout-minutes: 350
+    steps:
+      - name: Checkout this repo (workflow + local manifests)
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Preflight — wiki hardware requirements vs this runner
+        run: |
+          set -eu
+          DISK_GB=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
+          RAM_GB=$(free -g | awk '/^Mem:/{print $2}')
+          CPU=$(nproc)
+          echo "This runner : disk=${DISK_GB}GB ram=${RAM_GB}GB cpu=${CPU}"
+          case "${{ inputs.branch }}" in
+            lineage-2[1-9]*|lineage-2[2-3]*) NEED_DISK=350; NEED_RAM=55 ;;
+            lineage-20|lineage-19*|lineage-18*) NEED_DISK=250; NEED_RAM=30 ;;
+            *) NEED_DISK=150; NEED_RAM=15 ;;
+          esac
+          echo "Wiki needs  : disk>=${NEED_DISK}GB ram>=${NEED_RAM}GB  (branch ${{ inputs.branch }})"
+          if [ "$DISK_GB" -lt "$NEED_DISK" ] || [ "$RAM_GB" -lt "$NEED_RAM" ]; then
+            echo "::error::Runner too small for the wiki build — disk=${DISK_GB}GB (need >=${NEED_DISK}GB), ram=${RAM_GB}GB (need >=${NEED_RAM}GB). The workflow is complete and correct; re-run it with the runner input pointed at a runner that meets the wiki requirements (self-hosted box or a paid larger runner)."
+            exit 1
+          fi
+
+      - name: Install build deps (wiki "Installation" package set) + repo tool
+        run: |
+          set -eu
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex \
+            g++-multilib gcc-multilib git gnupg gperf imagemagick \
+            lib32readline-dev lib32z1-dev liblz4-tool libncurses-dev \
+            libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils \
+            lzop pngcrush rsync schedtool squashfs-tools xsltproc zip \
+            zlib1g-dev git-lfs python3
+          sudo curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo \
+            -o /usr/local/bin/repo
+          sudo chmod a+x /usr/local/bin/repo
+          git config --global user.email "ci@lineageos-mi439.invalid"
+          git config --global user.name "los-mi439-build"
+
+      - name: repo init + sync (shallow, no tags)
+        run: |
+          set -eu
+          mkdir -p "$HOME/android/lineage"
+          cd "$HOME/android/lineage"
+          repo init -u https://github.com/LineageOS/android.git \
+            -b "${{ inputs.branch }}" --git-lfs --no-clone-bundle
+          mkdir -p .repo/local_manifests
+          if [ -d "$GITHUB_WORKSPACE/local_manifests" ]; then
+            cp "$GITHUB_WORKSPACE"/local_manifests/*.xml .repo/local_manifests/ || true
+          fi
+          repo sync -c -j"$(nproc)" --no-tags --fail-fast
+
+      - name: breakfast (device trees: Mi439 + mithorium-common, kernel msm8937)
+        run: |
+          set -eu
+          cd "$HOME/android/lineage"
+          source build/envsetup.sh
+          breakfast "${{ inputs.device }}"
+
+      - name: Proprietary blobs (variant3 = needs_specific_android_fw)
+        run: |
+          set -eu
+          cd "$HOME/android/lineage"
+          if [ ! -d vendor/xiaomi ] || [ -z "$(ls -A vendor/xiaomi 2>/dev/null)" ]; then
+            echo "::error::vendor/xiaomi is empty. variant3's before_install is needs_specific_android_fw: run ./extract-files.py in device/xiaomi/${{ inputs.device }} against a Redmi 8A on the matching firmware (wiki step 4), or commit a VERIFIED blob-source manifest into local_manifests/ of this repo and re-run. No unverified mirror is hardcoded by design."
+            exit 1
+          fi
+
+      - name: brunch (full build)
+        run: |
+          set -eu
+          cd "$HOME/android/lineage"
+          source build/envsetup.sh
+          brunch "${{ inputs.device }}"
+
+      - name: Upload build artifacts (zip + recovery.img)
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: los-${{ inputs.branch }}-${{ inputs.device }}
+          path: |
+            ~/android/lineage/out/target/product/*/lineage-*.zip
+            ~/android/lineage/out/target/product/*/recovery.img
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

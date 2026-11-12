@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Optional local manifests for the Mi439 (variant3 = Redmi 8A) CI build.
+  Files placed in this directory are copied into .repo/local_manifests/
+  by the los-mi439-build workflow before `repo sync`.
+
+  Nothing is enabled by default. To add proprietary blobs in CI, drop a
+  manifest here that points at a blob source YOU HAVE VERIFIED (license,
+  integrity, branch). The classic mirror TheMuppets/proprietary_vendor_xiaomi
+  is DMCA-taken-down (github/dmca 2019-08-09); do not resurrect it blindly.
+  The wiki-sanctioned path stays ./extract-files.py against a Redmi 8A on the
+  matching firmware (variant3 before_install = needs_specific_android_fw).
+
+  Shape (for reference only — fill in verified values or delete this file):
+
+  <manifest>
+    <remote name="blobs" fetch="https://<verified-source>/"/>
+    <project name="<blob-repo>" path="vendor/xiaomi"
+             remote="blobs" revision="refs/heads/<lineage-branch>"/>
+  </manifest>
+-->
+<manifest>
+</manifest>
