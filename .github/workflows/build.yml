@@ -92,7 +92,7 @@ jobs:
           fi
           repo sync -c -j"$(nproc)" --no-tags --fail-fast
 
-      - name: breakfast (device trees: Mi439 + mithorium-common, kernel msm8937)
+      - name: breakfast (device trees Mi439 + mithorium-common, kernel msm8937)
         run: |
           set -eu
           cd "$HOME/android/lineage"
